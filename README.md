@@ -1,5 +1,4 @@
-# NTP based controller for 12V/24V clocks by TN (Nebenuhr)
-
+# NTP based controller for 12V/24V clocks by CTW (Nebenuhr)
 
 ![wiring](docs/clock-front.jpg)
 
