@@ -1,5 +1,5 @@
 /**
- * TN Nebenuhr - A Smart Clock Controller
+ * CTW Nebenuhr - A Smart Clock Controller
  *
  * This project controls a slave clock that displays time by advancing minute-by-minute.
  * The ESP8266 receives accurate time via NTP and drives the clock mechanism to keep
@@ -197,10 +197,10 @@ void handleRoot()
 
     // HTML header and CSS styling for clean interface
     String webpage = F("<!DOCTYPE html><html><head>\n");
-    webpage += F("<title>TN Nebenuhr</title><style>\n");
+    webpage += F("<title>CTW Nebenuhr</title><style>\n");
     webpage += F("body{margin-left:5em;margin-right:5em;font-family:sans-serif;font-size:14px;color:darkslategray;background-color:#EEE}h1{text-align:center}.info{width:100%;text-align:left;font-size:18pt}input,main,option,select,th{font-size:24pt;text-align:left}input{width:100%}input[type='submit']{width:min-content;float:right;text-align:right}main{font-size:16pt;vertical-align:middle}.info{line-height:2em}.info br{margin-left:3em}.logs{margin-top:2em;padding-top:2em;overflow-x:auto;border-top:black 2px solid}ul li{text-align:left}\n");
     webpage += F(".graph {background-color: #EEE; font-size:0; overflow-x: auto; padding-bottom: 40px;} .bar { background-color: blueviolet; width: 1px; display: inline-block; } .active { background-color: green; }");
-    webpage += F("</style></head><body><h1>TN Nebenuhr by Wolfgang Jung</h1><div class='main'>\n");
+    webpage += F("</style></head><body><h1>CTW Nebenuhr by Wolfgang Jung</h1><div class='main'>\n");
 
     // Time adjustment form
     webpage += F("<h2>Aktuell angezeigte Zeit:</h2>\n");
@@ -340,7 +340,7 @@ void setup()
     readFromEEProm();
     globalStats.uptimeSeconds = 0;
 
-    Serial.println(F("\nStarting TN Nebenuhr 2025 - Wolfgang Jung / Ideas In Logic\n"));
+    Serial.println(F("\nStarting CTW Nebenuhr 2025 - Wolfgang Jung / Ideas In Logic\n"));
 
     // Configure hardware control pins for clock mechanism
     pinMode(OUT1, OUTPUT);
