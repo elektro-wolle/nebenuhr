@@ -470,15 +470,19 @@ void setCurrentTime()
  */
 void advance()
 {
-    // Generate alternating pulse pattern for clock drive mechanism
-    if (currentDisplayedTime % 2 == 0) {
-        digitalWrite(OUT1, LOW);
-        digitalWrite(OUT2, HIGH);
-    } else {
-        digitalWrite(OUT1, HIGH);
-        digitalWrite(OUT2, LOW);
+    uint8_t STEPS[]={0, 4, 8, 16, 32, 64, 128, 192, 255};
+    for (size_t x = 0; x< sizeof(STEPS)/sizeof(STEPS[0]); x++) {
+        // Generate alternating pulse pattern for clock drive mechanism
+        if (currentDisplayedTime % 2 == 0) {
+            analogWrite(OUT1, 255 - STEPS[x]);
+            digitalWrite(OUT2, HIGH);
+        } else {
+            digitalWrite(OUT1, HIGH);
+            analogWrite(OUT2, 255 - STEPS[x]);
+        }
+        delay(30);
     }
-    delay(300); // Pulse duration for reliable clock movement
+    delay(200); // Pulse duration for reliable clock movement
     digitalWrite(OUT1, LOW);
     digitalWrite(OUT2, LOW);
 
