@@ -44,8 +44,15 @@
 
 // Time zone handling library
 #include <AceTime.h>
+#include <AceTimeClock.h>
+
+// display
+#include <TM1637Display.h>
 
 #include <list>
+
+#define TM1637_CLK D5
+#define TM1637_DIO D6
 
 #define OTA 1
 
@@ -100,6 +107,7 @@ private:
 };
 
 Logger logger;
+static TM1637Display display(TM1637_CLK, TM1637_DIO);
 
 // Time constants and timezone management
 static const time_t EPOCH_2000_01_01 = 946684800;
@@ -107,6 +115,10 @@ static const unsigned long REBOOT_TIMEOUT_MILLIS = 5000;
 
 using namespace ace_time;
 using namespace ace_time::zonedbx;
+using ace_time::clock::Clock;
+using ace_time::clock::NtpClock;
+using ace_time::clock::SystemClockLoop;
+
 static const int CACHE_SIZE = 3;
 ExtendedZoneProcessorCache<1> zoneProcessorCache;
 static ExtendedZoneProcessor localZoneProcessor;
@@ -119,6 +131,7 @@ ExtendedZoneManager zoneManager(
 
 // Default to Central European timezone
 static TimeZone localZone = zoneManager.createForZoneInfo(&zonedbx::kZoneEurope_Berlin);
+static SystemClockLoop* globalSystemClock;
 
 // Web server for configuration interface
 ESP8266WebServer server(80);
@@ -134,38 +147,6 @@ int16_t currentDisplayedTime = 9 * 60 + 44; // What the physical clock shows
 int16_t currentTime = 9 * 60 + 44; // Actual current time
 
 void setCurrentTime();
-
-/**
- * Initialize NTP time synchronization
- * Waits for valid time from internet time servers with timeout protection
- */
-void setupSntp()
-{
-    Serial.print(F("Configuring SNTP"));
-    configTime(0 /*timezone*/, 0 /*dst_sec*/, NTP_SERVER);
-
-    // Wait for valid time response (post-Y2K timestamps only)
-    unsigned long startMillis = millis();
-    while (true) {
-        Serial.print('.'); // Progress indicator
-        time_t now = time(nullptr);
-        if (now >= EPOCH_2000_01_01) {
-            Serial.println(F(" Done."));
-            break;
-        }
-
-        // Prevent infinite hang - reboot if NTP fails
-        unsigned long nowMillis = millis();
-        if ((unsigned long)(nowMillis - startMillis) >= REBOOT_TIMEOUT_MILLIS) {
-            Serial.println(F(" FAILED! Rebooting..."));
-            drd.loop();
-            delay(1000);
-            ESP.reset();
-        }
-
-        delay(500);
-    }
-}
 
 /**
  * Convert seconds to human-readable duration string
@@ -336,10 +317,12 @@ void readFromEEProm()
  */
 void setup()
 {
+    display.setBrightness(0x0f);
+    display.showNumberDec(0);
+
     Serial.begin(115200);
     readFromEEProm();
     globalStats.uptimeSeconds = 0;
-
     Serial.println(F("\nStarting CTW Nebenuhr 2025 - Wolfgang Jung / Ideas In Logic\n"));
 
     // Configure hardware control pins for clock mechanism
@@ -355,10 +338,13 @@ void setup()
     WiFiManager wiFiManager;
 
     // Check for double reset to enter WiFi configuration mode
+    display.showNumberDec(1);
     if (drd.detectDoubleReset()) {
+        display.showNumberDec(1);
         digitalWrite(LED_BUILTIN, HIGH);
         Serial.println(F("Reset WiFi configuration"));
         wiFiManager.resetSettings();
+        display.showNumberDec(2);
         wiFiManager.startConfigPortal("nebenuhr", "");
     }
 
@@ -366,7 +352,9 @@ void setup()
 #ifdef DEBUG
     logger.println(F("Trying to connect to known WiFi"));
 #endif
+    display.showNumberDec(3);
     if (!wiFiManager.autoConnect("nebenuhr")) {
+        display.showNumberDec(4);
         digitalWrite(LED_BUILTIN, HIGH);
         Serial.println(F("failed to connect and hit timeout"));
         delay(3000);
@@ -374,6 +362,7 @@ void setup()
         // Connection failed - restart and try again
         ESP.reset();
     }
+    display.showNumberDec(5);
 
     // Enable local network discovery
     if (MDNS.begin("nebenuhr")) { // Start the mDNS responder for esp8266.local
@@ -383,6 +372,7 @@ void setup()
     } else {
         logger.println(F("Error setting up MDNS responder!"));
     }
+    display.showNumberDec(6);
 
     // Configure web server endpoints
     digitalWrite(LED_BUILTIN, HIGH);
@@ -397,8 +387,25 @@ void setup()
     globalStats.reboots++;
     EEPROM.put(STATS_ADDRESS, globalStats);
 
+    display.showNumberDec(7);
+
     // Get accurate time from internet
-    setupSntp();
+    static NtpClock ntpClock("de.pool.ntp.org");
+    ntpClock.setup();
+    display.showNumberDec(8);
+    static SystemClockLoop systemClock(&ntpClock, (Clock*)0);
+    systemClock.setup();
+
+    display.showNumberDec(9);
+    for (int x = 0; x < 100 && systemClock.getNow() == systemClock.kInvalidSeconds; x++) {
+        systemClock.loop();
+        delay(100);
+#ifdef DEBUG
+        logger.println(F("Await NTP sync"));
+#endif
+    }
+    display.showNumberDec(10);
+    globalSystemClock = &systemClock;
     setCurrentTime();
 
     // Assume clock lost minimal time during power outage
@@ -453,10 +460,15 @@ void setup()
  */
 void setCurrentTime()
 {
-    time_t localTime = time(nullptr);
-    ZonedDateTime zonedDateTime = ZonedDateTime::forUnixSeconds64(
-        localTime, localZone);
+    if (!globalSystemClock) {
+        logger.print("No time set");
+        return;
+    }
+    acetime_t now = globalSystemClock->getNow();
+
+    ZonedDateTime zonedDateTime = ZonedDateTime::forEpochSeconds(now, localZone);
     currentTime = zonedDateTime.minute() + zonedDateTime.hour() * 60;
+    display.showNumberDecEx(zonedDateTime.hour() * 100 + zonedDateTime.minute(), 0xC0, true);
 
     // Pre-advance if close to next minute to prevent timing issues
     if (zonedDateTime.second() == 59) {
@@ -470,8 +482,8 @@ void setCurrentTime()
  */
 void advance()
 {
-    uint8_t STEPS[]={0, 4, 8, 16, 32, 64, 128, 192, 255};
-    for (size_t x = 0; x< sizeof(STEPS)/sizeof(STEPS[0]); x++) {
+    uint8_t STEPS[] = { 0, 4, 8, 16, 32, 64, 128, 192, 255 };
+    for (size_t x = 0; x < sizeof(STEPS) / sizeof(STEPS[0]); x++) {
         // Generate alternating pulse pattern for clock drive mechanism
         if (currentDisplayedTime % 2 == 0) {
             analogWrite(OUT1, 255 - STEPS[x]);
@@ -521,6 +533,7 @@ void loop()
     // Process any OTA update requests
     ArduinoOTA.handle();
 #endif
+    globalSystemClock->loop();
 
     // Primary clock synchronization logic - runs every second
     runEvery<1000>([]() {
